@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     const reader = new Readability(document);
     const article = reader.parse();
 
-    if (!article) {
+    if (!article || !article.textContent) {
       return NextResponse.json({ error: 'Could not extract article content' }, { status: 500 });
     }
 
