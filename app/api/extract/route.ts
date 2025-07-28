@@ -38,19 +38,38 @@ export async function POST(request: NextRequest) {
     const reader = new Readability(document);
     const article = reader.parse();
 
-    if (!article || !article.textContent) {
+    if (!article || !article.content) {
       return NextResponse.json({ error: 'Could not extract article content' }, { status: 500 });
     }
 
-    // Clean up the text content by removing extra whitespace
-    const cleanContent = article.textContent
-      .replace(/\s+/g, ' ')  // Replace multiple whitespace with single space
-      .replace(/\n\s*\n/g, '\n\n')  // Keep paragraph breaks but clean up extra newlines
-      .trim();
+    // Convert HTML content to formatted text while preserving structure
+    const tempDom = new JSDOM(article.content);
+    const tempDoc = tempDom.window.document;
+    
+    // Convert HTML to text while preserving paragraph breaks
+    const paragraphs: string[] = [];
+    const pElements = tempDoc.querySelectorAll('p, div, h1, h2, h3, h4, h5, h6, li');
+    
+    if (pElements.length > 0) {
+      pElements.forEach(element => {
+        const text = element.textContent?.trim();
+        if (text && text.length > 0) {
+          paragraphs.push(text);
+        }
+      });
+    } else {
+      // Fallback: split by line breaks if no paragraphs found
+      const fallbackText = tempDoc.body?.textContent || article.textContent || '';
+      const lines = fallbackText.split(/\n+/).filter(line => line.trim().length > 0);
+      paragraphs.push(...lines);
+    }
+
+    // Join paragraphs with double line breaks
+    const formattedContent = paragraphs.join('\n\n');
 
     return NextResponse.json({
       title: article.title,
-      content: cleanContent,
+      content: formattedContent,
       excerpt: article.excerpt
     });
 

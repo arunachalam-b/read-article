@@ -65,7 +65,7 @@ export default function Home() {
 
       setArticle(data);
       // Split content into words for highlighting
-      const wordArray = data.content.split(/(\s+)/).filter((word: string) => word.trim().length > 0);
+      const wordArray = data.content.split(/\s+/).filter((word: string) => word.trim().length > 0);
       setWords(wordArray);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -190,149 +190,194 @@ export default function Home() {
   };
 
   const renderArticleContent = () => {
-    if (!article || !words.length) return article?.content;
+    if (!article) return null;
 
-    const contentWords = article.content.split(/\s+/);
-    
-    return contentWords.map((word, index) => (
-      <span
-        key={index}
-        ref={(el) => { wordRefs.current[index] = el; }}
-        className={`${
-          index === currentWordIndex 
-            ? 'bg-yellow-200 transition-colors duration-200' 
-            : ''
-        }`}
-      >
-        {word}{index < contentWords.length - 1 ? ' ' : ''}
-      </span>
-    ));
+    // Split content into paragraphs
+    const paragraphs = article.content.split('\n\n').filter(p => p.trim().length > 0);
+    let globalWordIndex = 0;
+
+    return paragraphs.map((paragraph, paragraphIndex) => {
+      const paragraphWords = paragraph.split(/\s+/).filter(word => word.trim().length > 0);
+      
+      const renderedParagraph = paragraphWords.map((word, wordIndex) => {
+        const currentGlobalIndex = globalWordIndex + wordIndex;
+        return (
+          <span
+            key={currentGlobalIndex}
+            ref={(el) => { wordRefs.current[currentGlobalIndex] = el; }}
+            className={`${
+              currentGlobalIndex === currentWordIndex 
+                ? 'bg-blue-200 text-blue-900 px-1 rounded transition-all duration-200 shadow-sm' 
+                : ''
+            }`}
+          >
+            {word}{wordIndex < paragraphWords.length - 1 ? ' ' : ''}
+          </span>
+        );
+      });
+
+      globalWordIndex += paragraphWords.length;
+
+      return (
+        <p key={paragraphIndex} className="mb-6 leading-relaxed text-gray-800">
+          {renderedParagraph}
+        </p>
+      );
+    });
   };
 
   // Check if speech synthesis is supported
   const isSpeechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-4xl mx-auto px-4">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-6 text-center">
-            Article Reader
-          </h1>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        {/* Header Card */}
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8 mb-8">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent mb-4">
+              📖 Article Reader
+            </h1>
+            <p className="text-gray-600 text-lg">
+              Extract and listen to articles with intelligent text-to-speech
+            </p>
+          </div>
           
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="url" className="block text-sm font-medium text-gray-700 mb-2">
-                Article URL
+              <label htmlFor="url" className="block text-sm font-semibold text-gray-700 mb-3">
+                📰 Article URL
               </label>
-              <input
-                type="url"
-                id="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://example.com/article"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                disabled={loading}
-              />
+              <div className="relative">
+                <input
+                  type="url"
+                  id="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://example.com/your-favorite-article"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-gray-700 placeholder-gray-400"
+                  disabled={loading}
+                />
+                <div className="absolute inset-y-0 right-0 flex items-center pr-4">
+                  <div className="w-6 h-6 text-gray-400">
+                    🔗
+                  </div>
+                </div>
+              </div>
             </div>
             
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-6 rounded-xl hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-semibold shadow-lg transform hover:scale-[1.02] active:scale-[0.98]"
             >
-              {loading ? 'Extracting...' : 'Extract Article'}
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  Extracting Article...
+                </span>
+              ) : (
+                <span className="flex items-center justify-center gap-2">
+                  ✨ Extract Article
+                </span>
+              )}
             </button>
           </form>
 
           {error && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-red-700 text-sm">{error}</p>
+            <div className="mt-6 p-4 bg-red-50 border-l-4 border-red-400 rounded-lg">
+              <div className="flex items-center">
+                <div className="text-red-400 mr-3">❌</div>
+                <p className="text-red-700 font-medium">{error}</p>
+              </div>
             </div>
           )}
         </div>
 
+        {/* Article Content */}
         {article && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">
-              {article.title}
-            </h2>
-            
-            {article.excerpt && (
-              <p className="text-gray-600 italic mb-6 pb-4 border-b border-gray-200">
-                {article.excerpt}
-              </p>
-            )}
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 overflow-hidden">
+            {/* Article Header */}
+            <div className="bg-gradient-to-r from-gray-50 to-blue-50 p-8 border-b border-gray-200">
+              <h2 className="text-3xl font-bold text-gray-900 mb-4 leading-tight">
+                {article.title}
+              </h2>
+              
+              {article.excerpt && (
+                <div className="bg-white/70 rounded-xl p-4 border-l-4 border-blue-400">
+                  <p className="text-gray-700 italic text-lg leading-relaxed">
+                    💭 {article.excerpt}
+                  </p>
+                </div>
+              )}
+            </div>
             
             {/* Speech Controls */}
             {isSpeechSupported && (
-              <div className="mb-6 flex items-center gap-3 p-4 bg-gray-50 rounded-lg border">
-                <div className="flex items-center gap-2">
-                  {!isPlaying ? (
-                    <button
-                      onClick={startSpeech}
-                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
-                      title="Start reading aloud"
-                    >
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                      </svg>
-                      Play
-                    </button>
-                  ) : (
-                    <>
-                      {!isPaused ? (
-                        <button
-                          onClick={pauseSpeech}
-                          className="flex items-center gap-2 px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 transition-colors"
-                          title="Pause reading"
-                        >
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                          </svg>
-                          Pause
-                        </button>
-                      ) : (
-                        <button
-                          onClick={resumeSpeech}
-                          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
-                          title="Resume reading"
-                        >
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                          </svg>
-                          Resume
-                        </button>
-                      )}
-                      
+              <div className="p-6 bg-gray-50/50 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {!isPlaying ? (
                       <button
-                        onClick={stopSpeech}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
-                        title="Stop reading"
+                        onClick={startSpeech}
+                        className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:from-green-600 hover:to-emerald-600 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all duration-200 font-semibold shadow-lg transform hover:scale-105"
+                        title="Start reading aloud"
                       >
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
-                        </svg>
-                        Stop
+                        <span className="text-lg">🎵</span>
+                        Play Audio
                       </button>
-                    </>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        {!isPaused ? (
+                          <button
+                            onClick={pauseSpeech}
+                            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-xl hover:from-yellow-600 hover:to-orange-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 transition-all duration-200 font-semibold shadow-lg"
+                            title="Pause reading"
+                          >
+                            <span className="text-lg">⏸️</span>
+                            Pause
+                          </button>
+                        ) : (
+                          <button
+                            onClick={resumeSpeech}
+                            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:from-green-600 hover:to-emerald-600 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all duration-200 font-semibold shadow-lg"
+                            title="Resume reading"
+                          >
+                            <span className="text-lg">▶️</span>
+                            Resume
+                          </button>
+                        )}
+                        
+                        <button
+                          onClick={stopSpeech}
+                          className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-xl hover:from-red-600 hover:to-pink-600 focus:outline-none focus:ring-2 focus:ring-red-500 transition-all duration-200 font-semibold shadow-lg"
+                          title="Stop reading"
+                        >
+                          <span className="text-lg">⏹️</span>
+                          Stop
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {isPlaying && (
+                    <div className="flex items-center gap-3 px-4 py-2 bg-white/80 rounded-full shadow-sm border">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                        <span className="text-sm font-medium text-gray-700">Reading aloud...</span>
+                      </div>
+                    </div>
                   )}
                 </div>
-                
-                {isPlaying && (
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                      <span>Reading aloud...</span>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
             
-            <div className="prose prose-gray max-w-none" ref={articleContentRef}>
-              <div className="text-gray-800 leading-relaxed text-lg whitespace-pre-wrap">
-                {renderArticleContent()}
+            {/* Article Content */}
+            <div className="p-8" ref={articleContentRef}>
+              <div className="prose prose-lg prose-gray max-w-none">
+                <div className="text-gray-800 leading-relaxed text-lg">
+                  {renderArticleContent()}
+                </div>
               </div>
             </div>
           </div>
