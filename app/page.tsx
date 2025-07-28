@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, ReactElement } from 'react';
 
 interface ArticleData {
   title: string;
@@ -17,22 +17,19 @@ export default function Home() {
   // Speech-related state
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [currentWordIndex, setCurrentWordIndex] = useState(-1);
-  const [words, setWords] = useState<string[]>([]);
+  const [currentSentenceIndex, setCurrentSentenceIndex] = useState(-1);
+  const [sentences, setSentences] = useState<string[]>([]);
   
   // Refs
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
   const articleContentRef = useRef<HTMLDivElement>(null);
-  const wordRefs = useRef<(HTMLSpanElement | null)[]>([]);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const sentenceRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const currentSentenceRef = useRef<number>(-1);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       speechSynthesis.cancel();
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
     };
   }, []);
 
@@ -64,9 +61,25 @@ export default function Home() {
       }
 
       setArticle(data);
-      // Split content into words for highlighting
-      const wordArray = data.content.split(/\s+/).filter((word: string) => word.trim().length > 0);
-      setWords(wordArray);
+      // Split content into sentences for highlighting using consistent logic
+      const sentenceArray = data.content
+        .split(/([.!?]+)/)
+        .reduce((acc: string[], part: string, index: number) => {
+          if (index % 2 === 0) {
+            // This is the sentence content
+            if (part.trim()) {
+              acc.push(part.trim());
+            }
+          } else {
+            // This is the punctuation, add it to the last sentence
+            if (acc.length > 0) {
+              acc[acc.length - 1] += part;
+            }
+          }
+          return acc;
+        }, [])
+        .filter((sentence: string) => sentence.trim().length > 0);
+      setSentences(sentenceArray);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -74,13 +87,18 @@ export default function Home() {
     }
   };
 
-  const startSpeech = () => {
-    if (!article || !words.length) return;
+  const speakSentence = (sentenceIndex: number) => {
+    if (sentenceIndex >= sentences.length) {
+      // Finished reading all sentences
+      setIsPlaying(false);
+      setIsPaused(false);
+      setCurrentSentenceIndex(-1);
+      currentSentenceRef.current = -1;
+      return;
+    }
 
-    // Stop any existing speech
-    speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(article.content);
+    const sentence = sentences[sentenceIndex];
+    const utterance = new SpeechSynthesisUtterance(sentence);
     speechRef.current = utterance;
 
     // Configure speech settings
@@ -88,58 +106,37 @@ export default function Home() {
     utterance.pitch = 1;
     utterance.volume = 1;
 
-    const wordsToSpeak = article.content.split(/\s+/);
-    let wordIndex = 0;
-
-    // Clear any existing interval
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-
-    utterance.onstart = () => {
-      setIsPlaying(true);
-      setIsPaused(false);
-      setCurrentWordIndex(0);
-      
-      // Start the word highlighting with a more reliable interval
-      const avgWordDuration = 60000 / (150 * utterance.rate); // Assuming 150 WPM average reading speed
-      
-      intervalRef.current = setInterval(() => {
-        if (wordIndex < wordsToSpeak.length && speechSynthesis.speaking && !speechSynthesis.paused) {
-          setCurrentWordIndex(wordIndex);
-          scrollToCurrentWord(wordIndex);
-          wordIndex++;
-        } else if (wordIndex >= wordsToSpeak.length || !speechSynthesis.speaking) {
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
-          }
-        }
-      }, avgWordDuration);
-    };
+    // Highlight current sentence
+    setCurrentSentenceIndex(sentenceIndex);
+    currentSentenceRef.current = sentenceIndex;
+    scrollToCurrentSentence(sentenceIndex);
 
     utterance.onend = () => {
-      setIsPlaying(false);
-      setIsPaused(false);
-      setCurrentWordIndex(-1);
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      // Move to next sentence
+      speakSentence(sentenceIndex + 1);
     };
 
     utterance.onerror = () => {
       setIsPlaying(false);
       setIsPaused(false);
-      setCurrentWordIndex(-1);
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      setCurrentSentenceIndex(-1);
+      currentSentenceRef.current = -1;
     };
 
     speechSynthesis.speak(utterance);
+  };
+
+  const startSpeech = () => {
+    if (!article || !sentences.length) return;
+
+    // Stop any existing speech
+    speechSynthesis.cancel();
+
+    setIsPlaying(true);
+    setIsPaused(false);
+    
+    // Start reading from the first sentence
+    speakSentence(0);
   };
 
   const pauseSpeech = () => {
@@ -160,27 +157,24 @@ export default function Home() {
     speechSynthesis.cancel();
     setIsPlaying(false);
     setIsPaused(false);
-    setCurrentWordIndex(-1);
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    setCurrentSentenceIndex(-1);
+    currentSentenceRef.current = -1;
   };
 
-  const scrollToCurrentWord = (wordIndex: number) => {
-    const wordElement = wordRefs.current[wordIndex];
-    if (wordElement) {
+  const scrollToCurrentSentence = (sentenceIndex: number) => {
+    const sentenceElement = sentenceRefs.current[sentenceIndex];
+    if (sentenceElement) {
       // Get the viewport height
       const viewportHeight = window.innerHeight;
-      const wordRect = wordElement.getBoundingClientRect();
+      const sentenceRect = sentenceElement.getBoundingClientRect();
       
-      // Check if word is outside the viewport or near the bottom/top edges
-      const isAboveViewport = wordRect.top < 100;
-      const isBelowViewport = wordRect.bottom > viewportHeight - 150;
+      // Check if sentence is outside the viewport or near the bottom/top edges
+      const isAboveViewport = sentenceRect.top < 100;
+      const isBelowViewport = sentenceRect.bottom > viewportHeight - 150;
       const isOutsideViewport = isAboveViewport || isBelowViewport;
       
       if (isOutsideViewport) {
-        wordElement.scrollIntoView({ 
+        sentenceElement.scrollIntoView({ 
           behavior: 'smooth', 
           block: 'center',
           inline: 'nearest'
@@ -190,40 +184,70 @@ export default function Home() {
   };
 
   const renderArticleContent = () => {
-    if (!article) return null;
+    if (!article || !sentences.length) return null;
 
-    // Split content into paragraphs
-    const paragraphs = article.content.split('\n\n').filter(p => p.trim().length > 0);
-    let globalWordIndex = 0;
+    // Simple approach: render all sentences in order with paragraph breaks
+    const originalText = article.content;
+    const paragraphBreaks = new Set<number>();
+    
+    // Find where paragraph breaks should be by tracking sentence positions in original text
+    let searchPos = 0;
+    sentences.forEach((sentence, index) => {
+      const sentenceStart = originalText.indexOf(sentence.replace(/[.!?]+$/, ''), searchPos);
+      if (sentenceStart !== -1) {
+        // Check if there are double line breaks before this sentence
+        const textBefore = originalText.substring(0, sentenceStart);
+        const lastDoubleBreak = textBefore.lastIndexOf('\n\n');
+        const lastSentenceEnd = searchPos > 0 ? searchPos : 0;
+        
+        if (lastDoubleBreak > lastSentenceEnd) {
+          paragraphBreaks.add(index);
+        }
+        
+        searchPos = sentenceStart + sentence.length;
+      }
+    });
 
-    return paragraphs.map((paragraph, paragraphIndex) => {
-      const paragraphWords = paragraph.split(/\s+/).filter(word => word.trim().length > 0);
-      
-      const renderedParagraph = paragraphWords.map((word, wordIndex) => {
-        const currentGlobalIndex = globalWordIndex + wordIndex;
-        return (
-          <span
-            key={currentGlobalIndex}
-            ref={(el) => { wordRefs.current[currentGlobalIndex] = el; }}
-            className={`${
-              currentGlobalIndex === currentWordIndex 
-                ? 'bg-blue-200 text-blue-900 px-1 rounded transition-all duration-200 shadow-sm' 
-                : ''
-            }`}
-          >
-            {word}{wordIndex < paragraphWords.length - 1 ? ' ' : ''}
-          </span>
+    const elements: ReactElement[] = [];
+    let currentParagraph: ReactElement[] = [];
+
+    sentences.forEach((sentence, index) => {
+      // Add paragraph break if needed
+      if (paragraphBreaks.has(index) && currentParagraph.length > 0) {
+        elements.push(
+          <p key={`para-${elements.length}`} className="mb-6 leading-relaxed text-gray-800">
+            {currentParagraph}
+          </p>
         );
-      });
+        currentParagraph = [];
+      }
 
-      globalWordIndex += paragraphWords.length;
-
-      return (
-        <p key={paragraphIndex} className="mb-6 leading-relaxed text-gray-800">
-          {renderedParagraph}
-        </p>
+      currentParagraph.push(
+        <span
+          key={index}
+          ref={(el) => { sentenceRefs.current[index] = el; }}
+          className={`${
+            index === currentSentenceIndex 
+              ? 'bg-blue-200 text-blue-900 px-2 py-1 rounded-lg transition-all duration-300 shadow-sm' 
+              : ''
+          }`}
+        >
+          {sentence}
+          {index < sentences.length - 1 ? ' ' : ''}
+        </span>
       );
     });
+
+    // Add the last paragraph
+    if (currentParagraph.length > 0) {
+      elements.push(
+        <p key={`para-${elements.length}`} className="mb-6 leading-relaxed text-gray-800">
+          {currentParagraph}
+        </p>
+      );
+    }
+
+    return <>{elements}</>;
   };
 
   // Check if speech synthesis is supported
@@ -364,7 +388,9 @@ export default function Home() {
                     <div className="flex items-center gap-3 px-4 py-2 bg-white/80 rounded-full shadow-sm border">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                        <span className="text-sm font-medium text-gray-700">Reading aloud...</span>
+                        <span className="text-sm font-medium text-gray-700">
+                          Reading sentence {currentSentenceIndex + 1} of {sentences.length}
+                        </span>
                       </div>
                     </div>
                   )}
