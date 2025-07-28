@@ -24,6 +24,17 @@ export default function Home() {
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
   const articleContentRef = useRef<HTMLDivElement>(null);
   const wordRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      speechSynthesis.cancel();
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,42 +88,58 @@ export default function Home() {
     utterance.pitch = 1;
     utterance.volume = 1;
 
-    let wordIndex = 0;
     const wordsToSpeak = article.content.split(/\s+/);
+    let wordIndex = 0;
+
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
 
     utterance.onstart = () => {
       setIsPlaying(true);
       setIsPaused(false);
       setCurrentWordIndex(0);
+      
+      // Start the word highlighting with a more reliable interval
+      const avgWordDuration = 60000 / (150 * utterance.rate); // Assuming 150 WPM average reading speed
+      
+      intervalRef.current = setInterval(() => {
+        if (wordIndex < wordsToSpeak.length && speechSynthesis.speaking && !speechSynthesis.paused) {
+          setCurrentWordIndex(wordIndex);
+          scrollToCurrentWord(wordIndex);
+          wordIndex++;
+        } else if (wordIndex >= wordsToSpeak.length || !speechSynthesis.speaking) {
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+        }
+      }, avgWordDuration);
     };
 
     utterance.onend = () => {
       setIsPlaying(false);
       setIsPaused(false);
       setCurrentWordIndex(-1);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     };
 
     utterance.onerror = () => {
       setIsPlaying(false);
       setIsPaused(false);
       setCurrentWordIndex(-1);
-    };
-
-    // Use a different approach for word tracking since boundary events are unreliable
-    const speakWithHighlight = () => {
-      if (wordIndex < wordsToSpeak.length && isPlaying) {
-        setCurrentWordIndex(wordIndex);
-        scrollToCurrentWord(wordIndex);
-        wordIndex++;
-        
-        // Estimate timing based on word length and speech rate
-        const wordDuration = (wordsToSpeak[wordIndex - 1]?.length || 3) * 100 + 200;
-        setTimeout(speakWithHighlight, wordDuration);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
 
     speechSynthesis.speak(utterance);
-    setTimeout(speakWithHighlight, 500); // Start highlighting after a brief delay
   };
 
   const pauseSpeech = () => {
@@ -134,20 +161,29 @@ export default function Home() {
     setIsPlaying(false);
     setIsPaused(false);
     setCurrentWordIndex(-1);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
   };
 
   const scrollToCurrentWord = (wordIndex: number) => {
     const wordElement = wordRefs.current[wordIndex];
-    if (wordElement && articleContentRef.current) {
-      const container = articleContentRef.current;
-      const containerRect = container.getBoundingClientRect();
+    if (wordElement) {
+      // Get the viewport height
+      const viewportHeight = window.innerHeight;
       const wordRect = wordElement.getBoundingClientRect();
       
-      // Check if word is near the bottom of the visible area
-      if (wordRect.bottom > containerRect.bottom - 100) {
+      // Check if word is outside the viewport or near the bottom/top edges
+      const isAboveViewport = wordRect.top < 100;
+      const isBelowViewport = wordRect.bottom > viewportHeight - 150;
+      const isOutsideViewport = isAboveViewport || isBelowViewport;
+      
+      if (isOutsideViewport) {
         wordElement.scrollIntoView({ 
           behavior: 'smooth', 
-          block: 'center' 
+          block: 'center',
+          inline: 'nearest'
         });
       }
     }
